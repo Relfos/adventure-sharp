@@ -90,7 +90,7 @@ namespace AdventureSharp
 
         public override bool Execute(Adventure adventure)
         {
-            adventure.context.area = adventure.FindArea(this.id);
+            adventure.state.area = adventure.FindArea(this.id);
             return true;
         }
     }
@@ -171,13 +171,17 @@ namespace AdventureSharp
     public class Adventure
     {
         public Driver driver { get; private set; }
-        public Context context { get; private set; }
+        public State state { get; private set; }
 
-        public class Item
+        public abstract class Target
         {
-            public string id;
             public string name;
             public string desc;
+        }
+
+        public class Item: Target
+        {
+            public string id;
 
             public Item(DataNode node)
             {
@@ -186,9 +190,9 @@ namespace AdventureSharp
                 this.desc = node.GetString("desc");
             }
 
-            public virtual bool Execute(Driver driver, Context context)
+            public virtual bool Execute(Adventure adventure)
             {
-                driver.WriteLine("Nothing happened...");
+                adventure.driver.WriteLine("Nothing happened...");
                 return false;
             }
         }
@@ -243,16 +247,27 @@ namespace AdventureSharp
 
         public class Area
         {
-            public struct Connection
+            public class Connection
             {
                 public Area area;
                 public string direction;
+                public string type;
+
+                public bool open;
+
+                public Connection(Adventure adventure, DataNode node)
+                {
+                    var area_id = node.GetString("to");
+                    this.area = adventure.FindArea(area_id);
+                    this.direction = node.GetString("dir");
+                    this.type = node.GetString("type");
+
+                    this.open = this.type == "passage";
+                }
             }
 
-            public class Prop
+            public class Prop: Target
             {
-                public string name;
-                public string desc;
                 public ItemContainer items = new ItemContainer();
 
                 public Prop(Adventure adventure, DataNode node)
@@ -324,13 +339,7 @@ namespace AdventureSharp
 
                     if (child.Name == "connects")
                     {
-                        var other_id = child.GetString("to");
-                        var dir = child.GetString("dir");
-
-                        var connection = new Connection() {
-                            area = adventure.FindArea(other_id),
-                            direction = dir
-                        };
+                        var connection = new Connection(adventure, child);
 
                         this.connections.Add(connection);
                     }
@@ -344,7 +353,7 @@ namespace AdventureSharp
             }
         }
 
-        public class Context
+        public class State
         {
             public Area area;
             public ItemContainer items = new ItemContainer();
@@ -494,7 +503,7 @@ namespace AdventureSharp
             return input == index.ToString() || input.Equals(name, StringComparison.OrdinalIgnoreCase);
         }
 
-        private void ProcessInput(Driver driver, Adventure.Context context)
+        private void ProcessInput(Driver driver, Adventure.State state)
         {
             driver.Prompt();
             var input = driver.ReadLine();
@@ -531,10 +540,10 @@ namespace AdventureSharp
           
                 case "items":
                     {
-                        if (context.items.entries.Count>0)
+                        if (state.items.entries.Count>0)
                         {
                             driver.WriteLine("Inventory:");
-                            foreach (var entry in context.items.entries)
+                            foreach (var entry in state.items.entries)
                             {
                                 var ammount = entry.Value;
                                 if (ammount <=0 ) { continue; }
@@ -553,7 +562,7 @@ namespace AdventureSharp
                     {
                         int index = 1;
                         Item dropped = null;
-                        foreach (var entry in context.items.entries)
+                        foreach (var entry in state.items.entries)
                         {
                             var ammount = entry.Value;
                             if (ammount <= 0) { continue; }
@@ -571,7 +580,7 @@ namespace AdventureSharp
 
                         if (dropped != null)
                         {
-                            context.items.Move(dropped, context.area.items);
+                            state.items.Move(dropped, state.area.items);
                             driver.WriteLine($"Dropped {dropped.name}.");
                         }
                         break;
@@ -579,38 +588,13 @@ namespace AdventureSharp
 
                 case "take":
                     {
-                        FindItemAndContainer(temp, out Item taken, out ItemContainer container);
+                        FindTargetAndContainer(temp, out Target target, out ItemContainer container);
 
-                        if (temp.Length >=4  && temp[2]=="from")
-                        {
-                            var prop = context.area.FindProp(temp[3]);
-                            if (prop != null)
-                            {
-                                container = prop.items;
-                            }
-                        }
-                        else
-                        {
-                            container = context.area.items;
-                        }
-
-                        int index = 1;
-                        foreach (var entry in container.entries)
-                        {
-                            int ammount = entry.Value;
-                            var item = entry.Key;
-
-                            if (Compare(inputArg,  index, item.name))
-                            {
-                                taken = item;
-                                break;
-                            }
-                            index++;
-                        }
+                        Item taken = target as Item;
 
                         if (taken != null)
                         {
-                            container.Move(taken, context.items);
+                            container.Move(taken, state.items);
                             driver.WriteLine($"Took {taken.name}.");
                         }
                         else
@@ -618,10 +602,28 @@ namespace AdventureSharp
                             driver.WriteLine($"Can not take that.");
                         }
 
-                        if (taken == null)
+                        break;
+                    }
+
+                case "open":
+                    {
+                        Target target = null;
+                        int index = 1;
+                        foreach (var prop in state.area.props)
                         {
-                            driver.WriteLine("There is nothing to take...");
+                            if (Compare(inputArg, index, prop.name))
+                            {
+                                if (prop.)
+                                break;
+                            }
+                            index++;
                         }
+
+                        if (target == null)
+                        {
+                            driver.WriteLine($"Can not open that.");
+                        }
+
                         break;
                     }
 
@@ -629,23 +631,31 @@ namespace AdventureSharp
                     {
                         var direction = (inputArg == "back") ? GetOppositeDirection(lastDirection) : inputArg;
 
-                        var curArea = context.area;
+                        Area.Connection conn = null;
 
-                        if (context.area != null)
+                        if (state.area != null)
                         {
-                            foreach (var connection in context.area.connections)
+                            foreach (var connection in state.area.connections)
                             {
                                 if (connection.direction == direction)
                                 {
-                                    driver.WriteLine($"You moved [{direction}].");
-                                    lastDirection = direction;
-                                    context.area = connection.area;
+                                    conn = connection;
+                                    if (connection.open)
+                                    {
+                                        driver.WriteLine($"You moved [{direction}].");
+                                        lastDirection = direction;
+                                        state.area = connection.area;
+                                    }
+                                    else
+                                    {
+                                        driver.WriteLine($"Can not go [{direction}]. The {connection.type} is blocking the way.");
+                                    }
                                     break;
                                 }
                             }
                         }
 
-                        if (curArea == context.area)
+                        if (conn == null)
                         {
                             driver.WriteLine("Not possible to go in that direction...");
                         }
@@ -660,17 +670,22 @@ namespace AdventureSharp
 
                 case "examine":
                     {
-                        //FindItemAndContainer(temp, out Item taken, out ItemContainer container);
+                        FindTargetAndContainer(temp, out Target target, out ItemContainer container);
 
-                        var prop = context.area.FindProp(inputArg);
-                        if (prop != null)
+                        if (target != null)
                         {
-                            int index = 1;
-                            foreach (var entry in prop.items.entries)
+                            driver.WriteLine(target.desc);
+
+                            var prop = target as Area.Prop;
+                            if (prop != null)
                             {
-                                var item = entry.Key;
-                                driver.WriteLine($"Inside there is: {item.name} [{index}].");
-                                index++;
+                                int index = 1;
+                                foreach (var entry in prop.items.entries)
+                                {
+                                    var item = entry.Key;
+                                    driver.WriteLine($"Inside there is: {item.name} [{index}].");
+                                    index++;
+                                }
                             }
                         }
                         else
@@ -683,24 +698,24 @@ namespace AdventureSharp
 
                 case "look":
                     {
-                        if (context.area != null)
+                        if (state.area != null)
                         {
-                            driver.WriteLine(context.area.description);
+                            driver.WriteLine(state.area.description);
 
                             int index = 1;
-                            foreach (var prop in context.area.props)
+                            foreach (var prop in state.area.props)
                             {
                                 driver.WriteLine($"There is an {prop.name} [{index}].");
                                 index++;
                             }
 
-                            foreach (var connection in context.area.connections)
+                            foreach (var connection in state.area.connections)
                             {
-                                driver.WriteLine($"There is an exit [{connection.direction}].");
+                                driver.WriteLine($"There is a {connection.type} [{connection.direction}].");
                             }
 
                             index = 1;
-                            foreach (var entry in context.area.items.entries)
+                            foreach (var entry in state.area.items.entries)
                             {
                                 int ammount = entry.Value;
                                 if (ammount<=0)
@@ -722,50 +737,72 @@ namespace AdventureSharp
             }
         }
 
-        private void FindItemAndContainer(string[] temp, out Item item, out ItemContainer container)
+        private void FindTargetAndContainer(string[] temp, out Target item, out ItemContainer container)
         {
             var inputArg = temp.Length>1? temp[1] : "";
+            container = null;
 
             if (temp.Length>=4 && temp[2] == "from")
             {
                 var secondArg = temp[3];
 
-                int index = 1;
-                foreach (var prop in context.area.props)
+                if (secondArg == "bag")
                 {
-                    if (Compare(secondArg, index, prop.name))
+                    container = this.state.items;
+                }
+                else
+                {
+                    int index = 1;
+                    foreach (var prop in state.area.props)
                     {
-                        container = prop.items;
-                        index = 1;
-                        foreach (var entry in context.area.items.entries)
+                        if (Compare(secondArg, index, prop.name))
                         {
-                            if (Compare(inputArg, index, entry.Key.name))
-                            {
-                                item = entry.Key;
-                                return;
-                            }
+                            container = prop.items;
+                            break;
+                        }
+
+                        index++;
+                    }
+                }
+
+                if (container != null)
+                {
+                    int index = 1;
+                    foreach (var entry in container.entries)
+                    {
+                        if (Compare(inputArg, index, entry.Key.name))
+                        {
+                            item = entry.Key;
+                            return;
                         }
                     }
-
-                    index++;
                 }
             }
             else
             {
                 int index = 1;
-                foreach (var entry in context.area.items.entries)
+                foreach (var entry in state.area.items.entries)
                 {
                     if (Compare(inputArg, index, entry.Key.name))
                     {
-                        container = context.area.items;
+                        container = state.area.items;
                         item = entry.Key;
+                        return;
+                    }
+                }
+
+                foreach (var prop in state.area.props)
+                {
+                    if (Compare(inputArg, index, prop.name))
+                    {
+                        container = state.area.items;
+                        item = prop;
                         return;
                     }
                 }
             }
 
             item = null;
-            container = null;
         }
 
         private string GetOppositeDirection(string dir)
@@ -814,7 +851,7 @@ namespace AdventureSharp
 
         public void Reset()
         {
-            this.context = new Context();
+            this.state = new State();
             SetEntry("1");
             isFinished = false;
         }
@@ -840,7 +877,7 @@ namespace AdventureSharp
              }
             else
             {
-                ProcessInput(driver, context);
+                ProcessInput(driver, state);
             }
 
             return true;
