@@ -252,7 +252,27 @@ namespace AdventureSharp
             public class Prop
             {
                 public string name;
+                public string desc;
                 public ItemContainer items = new ItemContainer();
+
+                public Prop(Adventure adventure, DataNode node)
+                {
+                    this.name = node.GetString("name");
+                    this.desc = node.GetString("desc");
+
+                    foreach (var child in node.Children)
+                    {
+                        if (child.Name == "contains")
+                        {
+                            var ammount = child.GetInt32("ammount", 1);
+                            var item_id = child.GetString("item");
+
+                            var item = adventure.FindItem(item_id);
+
+                            items.Add(item, ammount);
+                        }
+                    }
+                }
             }
 
             public string id;
@@ -262,11 +282,29 @@ namespace AdventureSharp
 
             public ItemContainer items = new ItemContainer();
 
+            public List<Prop> props = new List<Prop>();
+
             public Area(string id)
             {
                 this.id = id;
             }
             
+            public Prop FindProp(string inputArg)
+            {
+                int index = 1;
+                foreach (var prop in this.props)
+                {
+                    if (Compare(inputArg, index, prop.name))
+                    {
+                        return prop;
+                    }
+
+                    index++;
+                }
+
+                return null;
+            }
+
             public void Load(Adventure adventure, DataNode node)
             {
                 this.name = node.GetString("name", "???");
@@ -295,6 +333,12 @@ namespace AdventureSharp
                         };
 
                         this.connections.Add(connection);
+                    }
+
+                    if (child.Name == "prop")
+                    {
+                        var prop = new Prop(adventure, child);
+                        props.Add(prop);
                     }
                 }
             }
@@ -445,6 +489,11 @@ namespace AdventureSharp
             _commandQueue.Enqueue(cmd);
         }
 
+        private static bool Compare(string input, int index, string name)
+        {
+            return input == index.ToString() || input.Equals(name, StringComparison.OrdinalIgnoreCase);
+        }
+
         private void ProcessInput(Driver driver, Adventure.Context context)
         {
             driver.Prompt();
@@ -455,6 +504,12 @@ namespace AdventureSharp
             var inputArg = temp.Length > 1 ? temp[1] : "";
             switch (tag)
             {
+                default:
+                    {
+                        driver.WriteLine("Command not understood...");
+                        break;
+                    }
+
                 case "restart":
                     {
                         this.Reset();
@@ -503,9 +558,11 @@ namespace AdventureSharp
                             var ammount = entry.Value;
                             if (ammount <= 0) { continue; }
 
-                            if (index.ToString() == inputArg)
+                            var item = entry.Key;
+
+                            if (Compare(inputArg,  index, item.name))
                             {
-                                dropped = entry.Key;
+                                dropped = item;
                                 break;
                             }
 
@@ -526,13 +583,28 @@ namespace AdventureSharp
 
                         if (context.area != null)
                         {
+                            ItemContainer container = null;
+
+                            if (temp.Length >=4  && temp[2]=="from")
+                            {
+                                var prop = context.area.FindProp(temp[3]);
+                                if (prop != null)
+                                {
+                                    container = prop.items;
+                                }
+                            }
+                            else
+                            {
+                                container = context.area.items;
+                            }
+
                             int index = 1;
-                            foreach (var entry in context.area.items.entries)
+                            foreach (var entry in container.entries)
                             {
                                 int ammount = entry.Value;
                                 var item = entry.Key;
 
-                                if (index.ToString() == inputArg)
+                                if (Compare(inputArg,  index, item.name))
                                 {
                                     taken = item;
                                     break;
@@ -542,8 +614,12 @@ namespace AdventureSharp
 
                             if (taken != null)
                             {
-                                context.area.items.Move(taken, context.items);
+                                container.Move(taken, context.items);
                                 driver.WriteLine($"Took {taken.name}.");
+                            }
+                            else
+                            {
+                                driver.WriteLine($"Can not take that.");
                             }
                         }
 
@@ -587,17 +663,47 @@ namespace AdventureSharp
                         break;
                     }
 
+                case "examine":
+                    {
+
+                        var prop = context.area.FindProp(inputArg);
+                        if (prop != null)
+                        {
+                            int index = 1;
+                            foreach (var entry in prop.items.entries)
+                            {
+                                var item = entry.Key;
+                                driver.WriteLine($"Inside there is: {item.name} [{index}].");
+                                index++;
+                            }
+                        }
+                        else
+                        {
+                            driver.WriteLine("Can not examine that...");
+                        }
+
+                        break;
+                    }
+
                 case "look":
                     {
                         if (context.area != null)
                         {
                             driver.WriteLine(context.area.description);
+
+                            int index = 1;
+                            foreach (var prop in context.area.props)
+                            {
+                                driver.WriteLine($"There is an {prop.name} [{index}].");
+                                index++;
+                            }
+
                             foreach (var connection in context.area.connections)
                             {
                                 driver.WriteLine($"There is an exit [{connection.direction}].");
                             }
 
-                            int index = 1;
+                            index = 1;
                             foreach (var entry in context.area.items.entries)
                             {
                                 int ammount = entry.Value;
