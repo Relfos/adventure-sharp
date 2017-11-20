@@ -6,8 +6,8 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{AA797FC2-30BD-48BF-888C-7F69EE6A1B16}</ProjectGuid>
     <OutputType>Exe</OutputType>
-    <RootNamespace>AsciiGame</RootNamespace>
-    <AssemblyName>AsciiGame</AssemblyName>
+    <RootNamespace>AdventureSharp</RootNamespace>
+    <AssemblyName>AdventureSharp</AssemblyName>
     <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>

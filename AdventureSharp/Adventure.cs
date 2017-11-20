@@ -6,7 +6,7 @@ using LunarParser;
 using LunarParser.XML;
 using System.IO;
 
-namespace AsciiGame
+namespace AdventureSharp
 {
     public abstract class Driver
     {

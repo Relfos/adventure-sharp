@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace AsciiGame
+namespace AdventureSharp
 {
     public class ConsoleDriver : Driver
     {
