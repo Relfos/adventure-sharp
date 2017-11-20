@@ -579,48 +579,43 @@ namespace AdventureSharp
 
                 case "take":
                     {
-                        Item taken = null;
+                        FindItemAndContainer(temp, out Item taken, out ItemContainer container);
 
-                        if (context.area != null)
+                        if (temp.Length >=4  && temp[2]=="from")
                         {
-                            ItemContainer container = null;
+                            var prop = context.area.FindProp(temp[3]);
+                            if (prop != null)
+                            {
+                                container = prop.items;
+                            }
+                        }
+                        else
+                        {
+                            container = context.area.items;
+                        }
 
-                            if (temp.Length >=4  && temp[2]=="from")
-                            {
-                                var prop = context.area.FindProp(temp[3]);
-                                if (prop != null)
-                                {
-                                    container = prop.items;
-                                }
-                            }
-                            else
-                            {
-                                container = context.area.items;
-                            }
+                        int index = 1;
+                        foreach (var entry in container.entries)
+                        {
+                            int ammount = entry.Value;
+                            var item = entry.Key;
 
-                            int index = 1;
-                            foreach (var entry in container.entries)
+                            if (Compare(inputArg,  index, item.name))
                             {
-                                int ammount = entry.Value;
-                                var item = entry.Key;
+                                taken = item;
+                                break;
+                            }
+                            index++;
+                        }
 
-                                if (Compare(inputArg,  index, item.name))
-                                {
-                                    taken = item;
-                                    break;
-                                }
-                                index++;
-                            }
-
-                            if (taken != null)
-                            {
-                                container.Move(taken, context.items);
-                                driver.WriteLine($"Took {taken.name}.");
-                            }
-                            else
-                            {
-                                driver.WriteLine($"Can not take that.");
-                            }
+                        if (taken != null)
+                        {
+                            container.Move(taken, context.items);
+                            driver.WriteLine($"Took {taken.name}.");
+                        }
+                        else
+                        {
+                            driver.WriteLine($"Can not take that.");
                         }
 
                         if (taken == null)
@@ -665,6 +660,7 @@ namespace AdventureSharp
 
                 case "examine":
                     {
+                        //FindItemAndContainer(temp, out Item taken, out ItemContainer container);
 
                         var prop = context.area.FindProp(inputArg);
                         if (prop != null)
@@ -724,6 +720,52 @@ namespace AdventureSharp
                         break;
                     }
             }
+        }
+
+        private void FindItemAndContainer(string[] temp, out Item item, out ItemContainer container)
+        {
+            var inputArg = temp.Length>1? temp[1] : "";
+
+            if (temp.Length>=4 && temp[2] == "from")
+            {
+                var secondArg = temp[3];
+
+                int index = 1;
+                foreach (var prop in context.area.props)
+                {
+                    if (Compare(secondArg, index, prop.name))
+                    {
+                        container = prop.items;
+                        index = 1;
+                        foreach (var entry in context.area.items.entries)
+                        {
+                            if (Compare(inputArg, index, entry.Key.name))
+                            {
+                                item = entry.Key;
+                                return;
+                            }
+                        }
+                    }
+
+                    index++;
+                }
+            }
+            else
+            {
+                int index = 1;
+                foreach (var entry in context.area.items.entries)
+                {
+                    if (Compare(inputArg, index, entry.Key.name))
+                    {
+                        container = context.area.items;
+                        item = entry.Key;
+                        return;
+                    }
+                }
+            }
+
+            item = null;
+            container = null;
         }
 
         private string GetOppositeDirection(string dir)
