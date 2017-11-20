@@ -455,6 +455,12 @@ namespace AdventureSharp
             var inputArg = temp.Length > 1 ? temp[1] : "";
             switch (tag)
             {
+                case "restart":
+                    {
+                        this.Reset();
+                        break;
+                    }
+
                 case "quit":
                     {
                         PushCommand(new SelectCommand("Are you sure?", new List<SelectCommand.Option>{
